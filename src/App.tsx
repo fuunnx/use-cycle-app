@@ -5,9 +5,7 @@ import { useCycleApp, useDriverEffects, useDriverSources } from './useCycleApp'
 import {
   CycleAppProvider,
   CycleContext,
-  useCycleContext,
 } from './cycleAppContext'
-import './styles.css'
 import xs, { Stream } from 'xstream'
 import dropRepeats from 'xstream/extra/dropRepeats'
 import sampleCombine from 'xstream/extra/sampleCombine'
