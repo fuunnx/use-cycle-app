@@ -1,98 +1,58 @@
-import { useMemo, useState, useLayoutEffect } from 'react'
-import { MemoryStream, Stream, Subscription } from 'xstream'
-import { map } from 'rambda'
+import { useMemo, useState, useEffect, useCallback } from "react";
+import { Stream } from "xstream";
 
-import {
-  Sinks,
-  AnyArray,
-  AnyRecord,
-  RecordOfStreams,
-  MainFunc,
-  Sink$s,
-  EffectMainFunc,
-} from './types'
-import { useCycleContext } from './cycleAppContext'
+import { EffectMainFunc, DriversSinks } from "./types";
+import { useCycleContext } from "./cycleAppContext";
+import { Drivers, Main } from "@cycle/run";
 
-export function useDriverSources<
-  So extends AnyRecord = Record<string, unknown>
->() {
-  const { sources } = useCycleContext()
-  return sources as So
+export function useGetDriversSources<D extends Drivers>() {
+  const { sources } = useCycleContext<D>();
+  return sources;
 }
 
-export function useDriverEffects<
-  Si extends Sink$s = Record<string, Stream<unknown>>
->(sinks: Si) {
-  const { registerSinks } = useCycleContext()
-  useLayoutEffect(() => {
-    const dispose = registerSinks(sinks)
-    return () => dispose()
-  }, [sinks, registerSinks])
+export function useSendDriversEffects<D extends Drivers>(
+  sinks: DriversSinks<D>
+) {
+  const { registerSinks } = useCycleContext<D>();
+  useEffect(() => registerSinks(sinks), [sinks, registerSinks]);
 }
 
-export function useCycle<Si, So extends AnyRecord>(
-  mainFunc: (sources: So) => Si,
-): Si {
-  const sources = useDriverSources<So>()
-  return useMemo(
-    () => mainFunc(sources),
-    [sources], // eslint-disable-line
-  )
+export function useStream<S>(sink: Stream<S>, initialState: S): S {
+  const [state, setState] = useState<S>(initialState);
+  const [, throwError] = useState<any>();
+
+  useEffect(() => {
+    const { unsubscribe } = sink.subscribe({
+      next(value) {
+        setState(value);
+      },
+      error(e: any) {
+        // so react catches it in error boundary
+        throwError(() => {
+          throw e;
+        });
+      },
+    });
+
+    return unsubscribe;
+  }, [sink, setState, throwError]);
+
+  return state;
 }
 
-export function useSinks<S>(sinks: RecordOfStreams<S>): Partial<S> {
-  const [state, setState] = useState<Partial<S>>(
-    map(
-      (sink: MemoryStream<any> | Stream<any>) => (sink as any)._v,
-      sinks,
-    ) as any,
-  )
-  const [, throwError] = useState<any>()
+export function useCycleApp<D extends Drivers, M extends Main, T>(
+  mainFunc: EffectMainFunc<D, M, T>,
+  defaultValue: T,
+  deps: any[]
+): T {
+  const main = useCallback(mainFunc, deps);
 
-  useLayoutEffect(() => {
-    const subscriptions: Subscription[] = []
-    Object.keys(sinks).forEach((sinkName) => {
-      const sink = sinks[sinkName as keyof S]
-      subscriptions.push(
-        sink.subscribe({
-          next(value) {
-            setState((prev) => ({ ...prev, [sinkName]: value }))
-          },
-          error(e: any) {
-            // so react catches it in error boundary
-            throwError(() => {
-              throw e
-            })
-          },
-        }),
-      )
-    })
+  const sources = useGetDriversSources<D>();
+  const [sinks, effects] = useMemo(
+    () => main(sources),
+    [sources, main] // eslint-disable-line
+  );
 
-    return () => {
-      subscriptions.forEach((subscription) => {
-        subscription.unsubscribe()
-      })
-    }
-    // eslint-disable-next-line
-  }, [sinks, setState, throwError])
-
-  return state
-}
-
-export function useCycleValues<
-  S extends Sinks,
-  Deps extends AnyArray | AnyRecord
->(mainFunc: MainFunc<S, Deps>): Partial<S> {
-  const sinks = useCycle(mainFunc)
-  return useSinks(sinks)
-}
-
-export function useCycleApp<
-  So extends AnyRecord,
-  Si extends Sink$s,
-  S extends Sinks
->(mainFunc: EffectMainFunc<So, Si, S>): Partial<S> {
-  const [sinks, effects] = useCycle(mainFunc)
-  useDriverEffects(effects)
-  return useSinks(sinks)
+  useSendDriversEffects<D>(effects);
+  return useStream(sinks, defaultValue);
 }

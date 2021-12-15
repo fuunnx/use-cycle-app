@@ -1,27 +1,19 @@
-import { DisposeFunction } from '@cycle/run'
-import { Stream, MemoryStream } from 'xstream'
+import { DisposeFunction, Drivers, Main, Sinks, Sources } from "@cycle/run";
+import { Stream } from "xstream";
 
-export type AnyRecord = Record<string, any>
-export type AnyArray = any[]
+export type DriversSinks<D extends Drivers> = {
+  [k in keyof D]?: Parameters<D[k]>[0];
+};
 
-export type Sinks = Record<string, any>
-export type Sink$s = Record<string, Stream<any>>
-export type RecordOfStreams<T> = {
-  [K in keyof T]: Stream<T[K]>
-}
+export type EffectMainFunc<D extends Drivers, M extends Main, T> =
+  | (Main & {
+      (so: Sources<D>): [Stream<T>, Sinks<M>];
+    })
+  | (Main & {
+      (): [Stream<T>, Sinks<M>];
+    });
 
-export interface MainFunc<S, Deps = []> {
-  (deps: MemoryStream<Deps>): RecordOfStreams<S>
-}
-
-export interface EffectMainFunc<So extends AnyRecord, Si extends Sink$s, S> {
-  (sources: So): [RecordOfStreams<S>, Si]
-}
-
-export type CycleApp<
-  So extends AnyRecord = AnyRecord,
-  Si extends Sink$s = Sink$s
-> = {
-  sources: So
-  registerSinks: (sinks: Si) => DisposeFunction
-}
+export type CycleApp<D extends Drivers> = {
+  sources: Sources<D>;
+  registerSinks: (sinks: DriversSinks<D>) => DisposeFunction;
+};

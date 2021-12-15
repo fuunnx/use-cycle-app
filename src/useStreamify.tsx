@@ -1,34 +1,25 @@
 import { useEffect, useMemo, useRef } from 'react'
 import xs, { MemoryStream } from 'xstream'
 
-export function useStreamify<Deps extends AnyArray | AnyRecord>(
-  deps: Deps,
-): MemoryStream<Deps> {
-  const dependencies = Array.isArray(deps)
-    ? deps
-    : [...Object.keys(deps as AnyRecord), ...Object.values(deps as AnyRecord)]
+export function useStreamify<T>(value: T): MemoryStream<T> {
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
-  const currDeps = useRef(deps)
-  currDeps.current = deps
-
-  const subject = useMemo(
-    () => {
-      return xs.createWithMemory<Deps>({
-        start(l) {
-          Promise.resolve().then(() => {
-            l.next(currDeps.current)
-          })
-        },
-        stop() {},
-      })
-    },
-    [], // eslint-disable-line
-  )
+  const subject = useMemo(() => {
+    return xs.createWithMemory<T>({
+      start(l) {
+        Promise.resolve().then(() => {
+          l.next(valueRef.current);
+        });
+      },
+      stop() {},
+    });
+  }, []);
 
   useEffect(() => {
-    subject.shamefullySendNext(currDeps.current)
+    subject.shamefullySendNext(valueRef.current);
     // eslint-disable-next-line
-  }, [...dependencies, subject])
+  }, [value, subject]);
 
-  return subject
+  return subject;
 }
