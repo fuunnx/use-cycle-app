@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { RefObject, useRef, useState } from "react";
 import {
   useCycleApp,
   CycleAppProvider,
@@ -72,14 +72,14 @@ const drivers = {
   log: (out$: Stream<any>) => out$.addListener({ next: console.log }),
 };
 
-function decorateLogs(prefix: string) {
+function decorateLogs(prefix: RefObject<string>) {
   return function (child: (sinks: AppSources) => AppSinks) {
     return (sources: AppSources) => {
       const sinks = child(sources);
 
       return {
         ...sinks,
-        log: sinks.log?.map((x: unknown) => `[${prefix}]: ${x}`),
+        log: sinks.log?.map((x: unknown) => `[${prefix.current}]: ${x}`),
       };
     };
   };
@@ -93,7 +93,7 @@ function withCacheSource<T extends Sources<any>, U extends DriversSinks<any>>(
 
 export default function App() {
   const [delay, setDelay] = useState(400);
-  const [prefix, setPrefix] = useState("Timer says");
+  const prefixRef = useRef("Timer says");
 
   return (
     <CycleAppProvider drivers={drivers}>
@@ -101,8 +101,8 @@ export default function App() {
         <h1>Hello CodeSandbox</h1>
         <Middleware
           middleware={useMemo(
-            () => compose(withCacheSource, decorateLogs(prefix)),
-            [prefix]
+            () => compose(withCacheSource, decorateLogs(prefixRef)),
+            []
           )}
           driverKeys={["cache$"]}
         >
@@ -118,8 +118,8 @@ export default function App() {
         />
         <input
           type="text"
-          value={prefix}
-          onChange={(event) => setPrefix(event.target.value)}
+          defaultValue={prefixRef.current}
+          onChange={(event) => (prefixRef.current = event.target.value)}
           step={200}
         />
       </div>
