@@ -7,14 +7,7 @@ export function useStreamify<T>(value: T): MemoryStream<T> {
   valueRef.current = value;
 
   const subject = useMemo(() => {
-    return xs.createWithMemory<T>({
-      start(l) {
-        Promise.resolve().then(() => {
-          l.next(valueRef.current);
-        });
-      },
-      stop() {},
-    });
+    return xs.createWithMemory<T>();
   }, []);
 
   useEffect(() => {

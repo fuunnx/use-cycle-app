@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { MemoryStream, Stream } from "xstream";
 import { useSyncExternalStore } from "use-sync-external-store";
+import { useCallback } from "use-memo-one";
 
 type StreamError<S> = {
   isError: true;
@@ -42,8 +43,8 @@ export function useStream<S>(
 ): StreamData<S> {
   const valueRef = useRef<StreamData<S>>({ isLoading: true });
 
-  return useSyncExternalStore<StreamData<S>>(
-    function subscribe(notifyChange) {
+  const subscribe = useCallback(
+    (notifyChange) => {
       const sub = stream.subscribe({
         next(value) {
           valueRef.current = {
@@ -70,8 +71,10 @@ export function useStream<S>(
 
       return () => sub.unsubscribe();
     },
-    function getSnapshot() {
-      return valueRef.current;
-    }
+    [stream]
   );
+
+  const getSnapshot = useCallback(() => valueRef.current, []);
+
+  return useSyncExternalStore<StreamData<S>>(subscribe, getSnapshot);
 }
