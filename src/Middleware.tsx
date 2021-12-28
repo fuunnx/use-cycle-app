@@ -51,7 +51,7 @@ export function Middleware<D1 extends Drivers, D2 extends Drivers = D1>(
       sources: childSources,
       registerSinks,
     };
-  }, []);
+  }, [driverKeys.join(), childSources, registerSinks]);
 
   return <CycleContext.Provider value={app}>{children}</CycleContext.Provider>;
 }
