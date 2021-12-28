@@ -45,7 +45,7 @@ export function Middleware<D1 extends Drivers, D2 extends Drivers = D1>(
     }
 
     return [so, si] as const;
-  }, [sources, childSinks]);
+  }, [sources, childSinks, middleware]);
 
   useSendDriversEffects(sinks);
 

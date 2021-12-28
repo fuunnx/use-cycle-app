@@ -10,6 +10,7 @@ import xs, { Stream } from "xstream";
 import { makeHTTPDriver, Response } from "@cycle/http";
 import { Sources } from "@cycle/run";
 import { compose } from "rambda";
+import { useMemo } from "use-memo-one";
 
 type AppSources = Sources<typeof drivers>;
 type AppSinks = DriversSinks<typeof drivers>;
@@ -99,7 +100,10 @@ export default function App() {
       <div>
         <h1>Hello CodeSandbox</h1>
         <Middleware
-          middleware={compose(withCacheSource, decorateLogs(prefix))}
+          middleware={useMemo(
+            () => compose(withCacheSource, decorateLogs(prefix)),
+            [prefix]
+          )}
           driverKeys={["cache$"]}
         >
           <Timer delay={delay} />
