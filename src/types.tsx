@@ -16,4 +16,5 @@ export type EffectMainFunc<D extends Drivers, M extends Main, T> =
 export type CycleApp<D extends Drivers> = {
   sources: Sources<D>;
   registerSinks: (sinks: DriversSinks<D>) => DisposeFunction;
+  driverKeys: string[];
 };

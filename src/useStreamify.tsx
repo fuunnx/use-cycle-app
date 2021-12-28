@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import xs, { MemoryStream } from "xstream";
+import { useMemo } from "use-memo-one";
 
 export function useStreamify<T>(value: T): MemoryStream<T> {
   const valueRef = useRef(value);
@@ -16,7 +17,7 @@ export function useStreamify<T>(value: T): MemoryStream<T> {
     });
   }, []);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     subject.shamefullySendNext(valueRef.current);
     // eslint-disable-next-line
   }, [value, subject]);

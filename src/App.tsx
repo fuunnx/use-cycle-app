@@ -13,9 +13,11 @@ import { makeHTTPDriver, Response, RequestInput } from "@cycle/http";
 import { useStreamify } from "./useStreamify";
 import { Sources } from "@cycle/run";
 import { DriversSinks } from "./types";
+import { Middleware } from "./Middleware";
+import { compose } from "rambda";
 
-type AppSources = Sources<Drivers>;
-type AppSinks = DriversSinks<Drivers>;
+type AppSources = Sources<typeof drivers>;
+type AppSinks = DriversSinks<typeof drivers>;
 
 type AppResults = Stream<{
   response: Response;
@@ -23,43 +25,40 @@ type AppResults = Stream<{
 }>;
 
 function Timer(props: { delay: number }) {
-  const props$ = useStreamify(props);
+  const { delay } = props;
+  const delay$ = useStreamify(delay);
 
-  const { data } = useCycleApp(function main(
-    sources: AppSources
-  ): [AppResults, AppSinks] {
-    const delay$ = props$.map((x) => x.delay).compose(dropRepeats());
+  const { data } = useCycleApp(
+    function main(sources: AppSources): [AppResults, AppSinks] {
+      const values = xs
+        .combine(
+          (sources.HTTP.select() as unknown as Stream<Stream<Response>>)
+            .flatten()
+            .remember() as Stream<Response>,
+          delay$
+            .map((delay) => xs.periodic(delay))
+            .flatten()
+            .fold((prev) => prev + 1, 0)
+        )
+        .map(([response, timer]) => {
+          return { response, timer };
+        });
 
-    const values = xs
-      .combine(
-        (sources.HTTP.select() as unknown as Stream<Stream<Response>>)
-          .flatten()
-          .remember() as Stream<Response>,
-        delay$
-          .map((delay) => xs.periodic(delay))
-          .flatten()
-          .fold((prev) => prev + 1, 0)
-      )
-      .map(([response, timer]) => {
-        return { response, timer };
-      });
-
-    return [
-      values,
-      {
-        log: xs.merge(
-          delay$,
-          (sources as any).cache$.map(
-            (x: unknown) => `Got ${JSON.stringify(x)} from cache`
-          )
-        ),
-        HTTP: delay$.map((delay): RequestInput => {
-          return { url: "/lol" + delay };
-        }),
-      },
-    ];
-  },
-  []);
+      return [
+        values,
+        {
+          log: xs.merge(
+            delay$,
+            (sources as any).cache$.map(
+              (x: unknown) => `Got ${JSON.stringify(x)} from cache`
+            )
+          ),
+          HTTP: delay$.map((delay) => ({ url: "/lol" + delay })) as any,
+        },
+      ];
+    },
+    [delay$]
+  );
   const { timer, response } = data ?? {};
 
   return (
@@ -77,82 +76,47 @@ const drivers = {
   log: (out$: Stream<any>) => out$.addListener({ next: console.log }),
 };
 
-type Drivers = typeof drivers;
+function decorateLogs(prefix: string) {
+  return function (child: (sinks: AppSources) => AppSinks) {
+    return (sources: AppSources) => {
+      const sinks = child(sources);
 
-function intercept(sinks: AppSinks, parent: (sinks: AppSinks) => AppSources) {
-  return {
-    ...parent({
-      ...sinks,
-      log: sinks.log?.map((x: unknown) => `[Intercepted]: ${x}`) as any,
-    }),
-    cache$: xs.of("yo"),
+      return {
+        ...sinks,
+        log: sinks.log?.map((x: unknown) => `[${prefix}]: ${x}`),
+      };
+    };
   };
 }
 
-type MiddlewareFunction = (
-  sinks: AppSinks,
-  parent: (sinks: AppSinks) => AppSources
-) => AppSources;
-type Props = { middleware: MiddlewareFunction };
-const Middleware: FC<Props> = function Interceptor(props) {
-  const { children, middleware } = props;
-  const sources = useGetDriversSources();
-  const driversKeys = Object.keys(drivers);
-  const { ownSinks, registerSinks } = useMemo(() => {
-    const ownSinks = Object.fromEntries(
-      driversKeys.map((key) => [key, xs.create()])
-    );
-    return {
-      ownSinks,
-      registerSinks(sinks: any) {
-        return replicateMany(sinks, ownSinks);
-      },
-    };
-  }, []);
-
-  const [ownSources, sinks] = useMemo(() => {
-    let si: AppSinks | null = null;
-    let so = middleware(ownSinks as any, (decoratedSinks: AppSinks) => {
-      si = decoratedSinks;
-      return sources as any;
-    });
-    if (si === null) {
-      throw Error('You have to call "parent" with your sinks');
-    }
-
-    return [so, si] as const;
-  }, [sources, ownSinks]);
-
-  useSendDriversEffects(sinks as any);
-
-  return (
-    <CycleContext.Provider value={{ sources: ownSources, registerSinks }}>
-      {children}
-    </CycleContext.Provider>
-  );
-};
+function withCacheSource<T extends Sources<any>, U extends DriversSinks<any>>(
+  child: (sinks: T & { cache$: Stream<string> }) => U
+) {
+  return (sources: T) => child({ ...sources, cache$: xs.of("YO") });
+}
 
 export default function App() {
   const [delay, setDelay] = useState(400);
 
   return (
-    <Suspense fallback={"Suspended"}>
-      <CycleAppProvider drivers={drivers}>
-        <div>
-          <h1>Hello CodeSandbox</h1>
-          <Middleware middleware={intercept}>
-            <Timer delay={delay} />
-          </Middleware>
-          <input
-            type="number"
-            value={delay}
-            onChange={(event) =>
-              setDelay(parseInt(event.target.value || "0", 10))
-            }
-            step={200}
-          />
-        </div>
-      </CycleAppProvider>
-    </Suspense>
+    <CycleAppProvider drivers={drivers}>
+      <div>
+        <h1>Hello CodeSandbox</h1>
+        <Middleware
+          middleware={compose(withCacheSource, decorateLogs("Timer said"))}
+          driverKeys={['cache$']}
+        >
+          <Timer delay={delay} />
+        </Middleware>
+        <input
+          type="number"
+          value={delay}
+          onChange={(event) =>
+            setDelay(parseInt(event.target.value || "0", 10))
+          }
+          step={200}
+        />
+      </div>
+    </CycleAppProvider>
   );
 }

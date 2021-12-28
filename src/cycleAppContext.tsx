@@ -26,6 +26,7 @@ const defaultApp: CycleApp<{}> = {
       "Please add a CycleContextProvider at the root of your application"
     );
   },
+  driverKeys: [],
 };
 
 export const CycleContext = createContext<CycleApp<{}>>(defaultApp);
@@ -39,39 +40,43 @@ export interface CycleAppProps<D extends Drivers> {
   drivers: D;
 }
 
+export function createSinksProxy<D extends Drivers>(driversKeys: string[]) {
+  let sinksProxy = Object.fromEntries(
+    driversKeys.map((key) => [key, xs.create()])
+  ) as Required<DriversSinks<D>>;
+
+  function registerSinks(sinks: DriversSinks<D>): DisposeFunction {
+    return replicateMany<DriversSinks<D>>(sinks, sinksProxy as any);
+  }
+
+  return [sinksProxy, registerSinks] as const;
+}
+
 export function CycleAppProvider<D extends Drivers>(
   props: PropsWithChildren<CycleAppProps<D>>
 ) {
   const { children, drivers } = props;
-  const [cycleApp, setCycleApp] = useState<CycleApp<D> | null>(null);
+
+  const [app, setApp] = useState<CycleApp<D> | null>(null);
 
   useEffect(() => {
-    const driversKeys = Object.keys(drivers);
+    const driverKeys = Object.keys(drivers);
+    const [sinks, registerSinks] = createSinksProxy<D>(driverKeys);
 
     const dispose = run((sources: Sources<D>) => {
-      let sinksProxy = Object.fromEntries(
-        driversKeys.map((key) => [key, xs.create()])
-      ) as Required<DriversSinks<D>>;
-
-      function registerSinks(sinks: DriversSinks<D>): DisposeFunction {
-        return replicateMany<DriversSinks<D>>(sinks, sinksProxy as any);
-      }
-
-      setCycleApp({ sources, registerSinks });
-      return sinksProxy;
+      setApp({ sources, registerSinks, driverKeys });
+      return sinks;
     }, drivers);
 
     return () => {
       dispose();
-      setCycleApp(null);
+      setApp(null);
     };
-  }, [drivers, setCycleApp]);
+  }, [drivers, setApp]);
 
-  if (!cycleApp) {
+  if (!app) {
     return null;
   }
 
-  return (
-    <CycleContext.Provider value={cycleApp}>{children}</CycleContext.Provider>
-  );
+  return <CycleContext.Provider value={app}>{children}</CycleContext.Provider>;
 }
