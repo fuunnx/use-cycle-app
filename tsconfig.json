@@ -4,11 +4,23 @@
     ],
     "compilerOptions": {
         "strict": true,
-        "esModuleInterop": true,
         "lib": [
             "dom",
-            "es2020"
+            "DOM.Iterable",
+            "esnext"
         ],
-        "jsx": "react-jsx"
+        "jsx": "react-jsx",
+        "target": "ES5",
+        "allowJs": true,
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "forceConsistentCasingInFileNames": true,
+        "noFallthroughCasesInSwitch": true,
+        "module": "esnext",
+        "moduleResolution": "node",
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "noEmit": true
     }
 }

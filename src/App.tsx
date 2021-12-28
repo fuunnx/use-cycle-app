@@ -1,5 +1,5 @@
-import { FC, useMemo, useState } from 'react'
-import { replicateMany } from '@cycle/run/lib/cjs/internals'
+import { FC, Suspense, useMemo, useState } from "react";
+import { replicateMany } from "@cycle/run/lib/cjs/internals";
 
 import {
   useCycleApp,
@@ -9,13 +9,7 @@ import {
 import { CycleAppProvider, CycleContext } from "./cycleAppContext";
 import xs, { Stream } from "xstream";
 import dropRepeats from "xstream/extra/dropRepeats";
-import sampleCombine from "xstream/extra/sampleCombine";
-import {
-  HTTPSource,
-  makeHTTPDriver,
-  Response,
-  RequestOptions,
-} from "@cycle/http";
+import { makeHTTPDriver, Response, RequestInput } from "@cycle/http";
 import { useStreamify } from "./useStreamify";
 import { Sources } from "@cycle/run";
 import { DriversSinks } from "./types";
@@ -24,43 +18,49 @@ type AppSources = Sources<Drivers>;
 type AppSinks = DriversSinks<Drivers>;
 
 type AppResults = Stream<{
-  response?: Response;
+  response: Response;
   timer: number;
 }>;
 
 function Timer(props: { delay: number }) {
   const props$ = useStreamify(props);
 
-  const { timer, response } = useCycleApp(
-    function main(sources: AppSources): [AppResults, AppSinks] {
-      const delay$ = props$.map((x) => x.delay).compose(dropRepeats());
+  const { data } = useCycleApp(function main(
+    sources: AppSources
+  ): [AppResults, AppSinks] {
+    const delay$ = props$.map((x) => x.delay).compose(dropRepeats());
 
-      const effects: AppSinks = {
-        log: delay$,
-        HTTP: delay$.map((delay) => {
+    const values = xs
+      .combine(
+        (sources.HTTP.select() as unknown as Stream<Stream<Response>>)
+          .flatten()
+          .remember() as Stream<Response>,
+        delay$
+          .map((delay) => xs.periodic(delay))
+          .flatten()
+          .fold((prev) => prev + 1, 0)
+      )
+      .map(([response, timer]) => {
+        return { response, timer };
+      });
+
+    return [
+      values,
+      {
+        log: xs.merge(
+          delay$,
+          (sources as any).cache$.map(
+            (x: unknown) => `Got ${JSON.stringify(x)} from cache`
+          )
+        ),
+        HTTP: delay$.map((delay): RequestInput => {
           return { url: "/lol" + delay };
         }),
-      };
-
-      const values = xs
-        .combine(
-          (sources.HTTP.select() as unknown as Stream<Stream<Response>>)
-            .flatten()
-            .remember() as Stream<Response>,
-          delay$
-            .map((delay) => xs.periodic(delay))
-            .flatten()
-            .fold((prev) => prev + 1, 0)
-        )
-        .map(([response, timer]) => {
-          return { response, timer };
-        });
-
-      return [values, effects];
-    },
-    { response: undefined, timer: 0 },
-    []
-  );
+      },
+    ];
+  },
+  []);
+  const { timer, response } = data ?? {};
 
   return (
     <>
@@ -79,17 +79,25 @@ const drivers = {
 
 type Drivers = typeof drivers;
 
-const driversKeys = Object.keys(drivers);
-function intercept(sources: AppSources, ownSinks: AppSinks) {
-  return [
-    { ...sources, cache$: xs.of("yo") },
-    { ...ownSinks, log: ownSinks.log.map((x) => x.toUpperCase()) },
-  ];
+function intercept(sinks: AppSinks, parent: (sinks: AppSinks) => AppSources) {
+  return {
+    ...parent({
+      ...sinks,
+      log: sinks.log?.map((x: unknown) => `[Intercepted]: ${x}`) as any,
+    }),
+    cache$: xs.of("yo"),
+  };
 }
 
-const Interceptor: FC = function Interceptor(props) {
-  const { children } = props;
+type MiddlewareFunction = (
+  sinks: AppSinks,
+  parent: (sinks: AppSinks) => AppSources
+) => AppSources;
+type Props = { middleware: MiddlewareFunction };
+const Middleware: FC<Props> = function Interceptor(props) {
+  const { children, middleware } = props;
   const sources = useGetDriversSources();
+  const driversKeys = Object.keys(drivers);
   const { ownSinks, registerSinks } = useMemo(() => {
     const ownSinks = Object.fromEntries(
       driversKeys.map((key) => [key, xs.create()])
@@ -97,14 +105,22 @@ const Interceptor: FC = function Interceptor(props) {
     return {
       ownSinks,
       registerSinks(sinks: any) {
-        console.log(sinks);
         return replicateMany(sinks, ownSinks);
       },
     };
   }, []);
 
   const [ownSources, sinks] = useMemo(() => {
-    return intercept(sources as any, ownSinks as any);
+    let si: AppSinks | null = null;
+    let so = middleware(ownSinks as any, (decoratedSinks: AppSinks) => {
+      si = decoratedSinks;
+      return sources as any;
+    });
+    if (si === null) {
+      throw Error('You have to call "parent" with your sinks');
+    }
+
+    return [so, si] as const;
   }, [sources, ownSinks]);
 
   useSendDriversEffects(sinks as any);
@@ -117,24 +133,26 @@ const Interceptor: FC = function Interceptor(props) {
 };
 
 export default function App() {
-  const [delay, setDelay] = useState(400)
+  const [delay, setDelay] = useState(400);
 
   return (
-    <CycleAppProvider drivers={drivers}>
-      <div>
-        <h1>Hello CodeSandbox</h1>
-        <Interceptor>
-          <Timer delay={delay} />
-        </Interceptor>
-        <input
-          type="number"
-          value={delay}
-          onChange={(event) =>
-            setDelay(parseInt(event.target.value || '0', 10))
-          }
-          step={200}
-        />
-      </div>
-    </CycleAppProvider>
-  )
+    <Suspense fallback={"Suspended"}>
+      <CycleAppProvider drivers={drivers}>
+        <div>
+          <h1>Hello CodeSandbox</h1>
+          <Middleware middleware={intercept}>
+            <Timer delay={delay} />
+          </Middleware>
+          <input
+            type="number"
+            value={delay}
+            onChange={(event) =>
+              setDelay(parseInt(event.target.value || "0", 10))
+            }
+            step={200}
+          />
+        </div>
+      </CycleAppProvider>
+    </Suspense>
+  );
 }
