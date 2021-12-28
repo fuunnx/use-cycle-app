@@ -1,19 +1,14 @@
-import { FC, Suspense, useMemo, useState } from "react";
-import { replicateMany } from "@cycle/run/lib/cjs/internals";
-
+import { useState } from "react";
 import {
   useCycleApp,
-  useSendDriversEffects,
-  useGetDriversSources,
-} from "./useCycleApp";
-import { CycleAppProvider, CycleContext } from "./cycleAppContext";
+  CycleAppProvider,
+  useStreamify,
+  DriversSinks,
+  Middleware,
+} from "./lib";
 import xs, { Stream } from "xstream";
-import dropRepeats from "xstream/extra/dropRepeats";
-import { makeHTTPDriver, Response, RequestInput } from "@cycle/http";
-import { useStreamify } from "./useStreamify";
+import { makeHTTPDriver, Response } from "@cycle/http";
 import { Sources } from "@cycle/run";
-import { DriversSinks } from "./types";
-import { Middleware } from "./Middleware";
 import { compose } from "rambda";
 
 type AppSources = Sources<typeof drivers>;
@@ -97,14 +92,15 @@ function withCacheSource<T extends Sources<any>, U extends DriversSinks<any>>(
 
 export default function App() {
   const [delay, setDelay] = useState(400);
+  const [prefix, setPrefix] = useState("Timer says");
 
   return (
     <CycleAppProvider drivers={drivers}>
       <div>
         <h1>Hello CodeSandbox</h1>
         <Middleware
-          middleware={compose(withCacheSource, decorateLogs("Timer said"))}
-          driverKeys={['cache$']}
+          middleware={compose(withCacheSource, decorateLogs(prefix))}
+          driverKeys={["cache$"]}
         >
           <Timer delay={delay} />
         </Middleware>
@@ -114,6 +110,12 @@ export default function App() {
           onChange={(event) =>
             setDelay(parseInt(event.target.value || "0", 10))
           }
+          step={200}
+        />
+        <input
+          type="text"
+          value={prefix}
+          onChange={(event) => setPrefix(event.target.value)}
           step={200}
         />
       </div>

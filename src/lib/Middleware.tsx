@@ -1,7 +1,11 @@
 import { Drivers, Sources } from "@cycle/run";
-import { PropsWithChildren, useContext } from "react";
+import { PropsWithChildren } from "react";
 import { useMemo } from "use-memo-one";
-import { createSinksProxy, CycleContext } from "./cycleAppContext";
+import {
+  createSinksProxy,
+  CycleContext,
+  useCycleContext,
+} from "./cycleAppContext";
 import { CycleApp, DriversSinks } from "./types";
 import { useSendDriversEffects } from "./useCycleApp";
 
@@ -17,7 +21,7 @@ export function Middleware<D1 extends Drivers, D2 extends Drivers = D1>(
 ) {
   const { children, middleware } = props;
 
-  const parentApp = useContext(CycleContext);
+  const parentApp = useCycleContext<D1>();
   const sources = parentApp.sources;
   const driverKeys = Array.from(
     new Set([...parentApp.driverKeys, ...(props.driverKeys ?? [])])
